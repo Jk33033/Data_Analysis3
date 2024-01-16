@@ -41,7 +41,7 @@ data["female"] = (data["sex"] == 2) # make dummy variables regarding gender
 In this report, four predictive models are built with linear regression for earnings per hour, especially for Personal Care and Service Occupations. The four models are compared in three different ways; (1) RMSE in the full sample, (2) crossvalidated RMSE and (3) BIC in the full sample. The result is that RMSE in the full sample monotonically decreased, while crossvalidated RMSE and BIC in the full sample showed a U curve by comlexitiy.
 
 
-### Making Model 1-4
+### Making Models
 
 4 models are made with following variables.
 
@@ -52,7 +52,9 @@ In this report, four predictive models are built with linear regression for earn
 - model3: Gender is also important, so it should be added to model3
  $$Earnings = \beta_0 + \beta_1 Age + \beta_2 (Age)^2 + \beta_3 Grade + \beta_4 (Grade)^2 + \beta_5 Female$$ 
 - model4: This is the most complex model of 4 models, including any variables such as the length of working, the number of children, and others times age.
- $$Earnings = \beta_0 + \beta_1 Age + \beta_2 (Age)^2 + \beta_3 Grade + \beta_4 (Grade)^2 + \beta_5 Female + \beta_6 Working Hours + \beta_7 Children + \beta_8 (Grade)(Age) + \beta_9 (Female)(Age) + \beta_10 (Working Hours)(Age) + \beta_11 (Children)(Age)$$ 
+ $$Earnings = \beta_0 + \beta_1 Age + \beta_2 (Age)^2 + \beta_3 Grade + \beta_4 (Grade)^2 + \beta_5 Female$$
+ $$ +  \beta_6 Working Hours + \beta_7 Children + \beta_8 (Grade)(Age)  + \beta_9 (Female)(Age)$$
+ $$ + \beta_10 (Working Hours)(Age) + \beta_11 (Children)(Age)$$ 
 
 
 ### (1)Comparing 4 models in RMSE in the full sample
@@ -89,7 +91,19 @@ rmse_results.loc[0] = rmse_values
 # show result
 print(rmse_results)
 ```
+
+
 **RMSE in the full sample in 4 models**
+```{python}
+#plot with pd
+models = ['Model1', 'Model2', 'Model3', 'Model4']
+plt.figure(figsize=(4, 2))
+plt.plot(models, rmse_values)
+plt.xlabel('Model')
+plt.ylabel('RMSE')
+plt.title('RMSE of Different Models')
+plt.show()
+```
 
 ### (2)Comparing 4 models in liner regression with k-fold cross validation
 This is the direct approach to find the best model. In k-fold cross validation, sample is randomly divided into test set and train set. This time, k is defined as 4. Model 3 shows the lowest figure, which means model3 can be the best for prediction without overfitting. 
@@ -143,6 +157,15 @@ cv_list = [cv1, cv2, cv3, cv4]
 summarize_cv(cv_list)
 ```
 **RMSE with k-fold cross validation in 4 models**
+```{python}
+#plot with pd
+plt.figure(figsize=(4, 2))
+plt.plot(models, summarize_cv(cv_list).T["Average"])
+plt.xlabel('Model')
+plt.ylabel('RMSE')
+plt.title('RMSE with k-fold cross validation of Different Models')
+plt.show()
+```
 
 ### (3)Comparing 4 models in Bayesian Information Criterion(BIC)
 BIC is one of good approaches to find indirectly the best model by test fit and penalty.
@@ -164,5 +187,21 @@ bic_results.loc[0] = bic
 
 # show result
 print(bic_results)
+
 ```
 **BIC of 4 models**
+
+```{python}
+#plot with pd
+plt.figure(figsize=(4, 2))
+plt.plot(models, bic)
+plt.xlabel('Model')
+plt.ylabel('BIC')
+plt.title('BIC')
+plt.show()
+```
+
+### Conclusion
+In this analysis, four linear regression models for estimating hourly earnings in Personal Care and Service Occupations were compared using RMSE on the full sample, cross-validated RMSE, and BIC. Results showed that while full-sample RMSE decreased with complexity, cross-validated RMSE and BIC displayed a U-shaped pattern, indicating a trade-off between model complexity and predictive accuracy.
+
+Full-sample RMSE decreased with more complex models. However, cross-validation and BIC analyses identified Model 3 as optimal, balancing accuracy and overfitting by its lowest BIC and cross-validated RMSE.
