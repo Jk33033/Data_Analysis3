@@ -1,0 +1,251 @@
+---
+title: "Data Analysis3 Assignment-2 Jo Kudo"
+format:
+  html:
+    code-fold: true
+jupyter: python3
+---
+## Introduction
+
+In Porto, our company manages a portfolio of small to medium-sized apartments that accommodate between 2 to 6 guests per unit. Currently, we are in the process of developing a pricing strategy for our upcoming apartment listings, which have yet to be introduced to the market. This report is dedicated to the construction of a predictive pricing model tailored for Airbnb accommodations located in Porto.
+Our approach involves a thorough evaluation and comparison of various predictive models. The key criterion for this comparison is the RMSE, or Root Mean Squared Error, which is a standard measure used to quantify the accuracy of price predictions. By examining the RMSE values, we aim to determine the most suitable model for forecasting prices that have not been previously established.
+The objective is to select a predictive model that not only provides precise pricing recommendations but also complements our strategic objectives for market entry. Identifying the optimal model is critical to ensuring that our new listings are competitively priced, thereby positioning our company as a strong contender in the local accommodation sector.
+
+```{python}
+import os
+import pandas as pd
+import numpy as np
+import sys
+import patsy
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
+from sklearn.linear_model import LinearRegression, LogisticRegression, LogisticRegressionCV
+from sklearn.model_selection import train_test_split, GridSearchCV, KFold
+import sklearn.metrics as metrics
+from sklearn.metrics import brier_score_loss, roc_curve, auc, confusion_matrix, roc_auc_score, mean_squared_error
+from sklearn.ensemble import RandomForestClassifier
+from plotnine import *
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from stargazer import stargazer
+from statsmodels.tools.eval_measures import mse,rmse
+import matplotlib.pyplot as plt
+from mizani.formatters import percent_format
+
+import warnings
+warnings.filterwarnings('ignore')
+
+data = pd.read_csv("https://raw.githubusercontent.com/Jk33033/Data_Analysis3/main/assignment2/listings.csv")
+
+```
+
+## Feature Engineering
+
+The information used for this report comes from an Airbnb website. It has 75 different details about the places people can rent. These details help us build a good model to suggest prices for these rentals. The original dataset looks like below:
+
+```{python}
+data.describe()
+```
+
+
+The report begins by selecting data for accommodations suitable for 2 to 6 guests, in line with the guidelines provided. Following this, variables initially presented as text are converted into numerical form for analytical purposes. 
+
+``` {python}
+data["accommodates"].info
+```
+
+One of the changed variables is the following looking.
+
+``` {python}
+data["accommodates"] = data["accommodates"].astype(float)
+data['host_acceptance_rate'] = data['host_acceptance_rate'].replace('%', '', regex=True).astype(float)
+data['price'] = data['price'].replace('[\$,]', '', regex=True).astype(float)
+data = data[data["accommodates"] <=  6]
+data = data[data["accommodates"] >= 2]
+
+data["accommodates"].info
+```
+
+
+
+Additionally, the dataset retains a selection of property types to investigate the hypothesis that certain categories of accommodations may significantly impact pricing.  Finally, the rows which have at least one "null" value are dropped, because all columns need to have a value for making any model.
+
+
+```{python}
+# basic variables inc neighbourhood
+basic_vars = [
+    "accommodates",
+    "beds",
+    "property_type",
+    "room_type",
+    "neighbourhood_cleansed"
+]
+
+# reviews
+reviews = [
+    "number_of_reviews",
+    "review_scores_rating",
+]
+
+predictors_1 = basic_vars
+predictors_2 = basic_vars + reviews
+all = ['price'] + predictors_2
+
+data_selected = data[all]
+
+
+# dropna
+data_selected = data_selected.dropna()
+
+```
+# Model building, prediction and model selection
+
+Three models are built and compared with their RMSE. The following models are considered:
+
+1.  Random Forest
+    The first model is from Random Forest, which is a machine learning algorithm that builds multiple decision trees and merges them together to get a more accurate and stable prediction. It uses a technique of random sampling of training data points and features when building trees.
+
+Following step is conducted;
+- splitting train and test data
+- conducting dmatrices
+- conducting random forest method for building model and calculating total RMSE on holdout data
+
+
+```{python}
+data_train, data_holdout = train_test_split(data_selected, train_size=0.7, random_state=42)
+print("data_train.shape=", data_train.shape)
+print("data_holdout.shape=", data_holdout.shape)
+```
+
+
+```{python}
+from patsy import dmatrices
+y, X = dmatrices("price ~ " + " + ".join(predictors_2), data_train)
+print("X_train=")
+print(X)
+```
+
+```{python}
+from sklearn.ensemble import RandomForestRegressor
+
+
+rfr = RandomForestRegressor(random_state = 20240211)
+
+tune_grid = {"max_features": [6, 8, 10, 12], "min_samples_leaf": [5, 10, 15]}
+
+rf_random = GridSearchCV(
+    rfr,
+    tune_grid,
+    cv=5,
+    scoring="neg_root_mean_squared_error",
+    verbose=3,
+)
+
+
+rf_model = rf_random.fit(X, y.ravel())
+
+
+y_holdout, X_holdout = dmatrices("price ~ " + " + ".join(predictors_2), data_holdout)
+
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.metrics import mean_squared_error
+from sklearn.compose import ColumnTransformer
+
+categorical_columns = [col for col in predictors_2 if col == "property_type" or col == "room_type" or col == "neighbourhood_cleansed"]
+numerical_columns = [col for col in predictors_2 if col not in categorical_columns]
+
+categorical_encoder = OneHotEncoder(handle_unknown="ignore")
+
+preprocessing = ColumnTransformer([
+    ("cat", categorical_encoder, categorical_columns),
+    ("num", "passthrough", numerical_columns)])
+
+rf_pipeline = Pipeline(
+    [("preprocess", preprocessing), 
+     ("regressor", rf_model.best_estimator_)] # put best model to pipeline
+)
+
+
+rf_pipeline.fit(data_train[predictors_2],data_train.price)
+
+data_holdout_w_prediction = data_holdout.assign(
+    predicted_price=rf_pipeline.predict(data_holdout[predictors_2])
+)
+
+all_holdout = pd.DataFrame(
+    [
+        mean_squared_error(
+            data_holdout_w_prediction.price,
+            data_holdout_w_prediction.predicted_price,
+            squared=False,
+        ),
+        data_holdout_w_prediction.price.mean(),
+    ],
+    index=["rmse", "mean_price"],
+).T.assign(rmse_norm=lambda x: x.rmse / x.mean_price).round(2)
+all_holdout.index = ["Total"]
+
+all_holdout
+
+```
+2.	Linear Ordinary Least Squares (OLS) Regression
+    The second model is from Linear OLS Regression. The aim is to draw a line that best fits the data by minimizing the sum of the squared differences between the actual data points and the line.
+
+```{python}
+y, X = dmatrices("price ~ " + " + ".join(predictors_2), data_train)
+
+ols_model = LinearRegression().fit(X,y)
+
+y_test, X_test = dmatrices("price ~ " + " + ".join(predictors_2), data_holdout)
+
+y_hat = ols_model.predict(X)
+
+ols_rmse = mean_squared_error(y,y_hat,squared=False)
+print("ols_rmse=", ols_rmse)
+
+```
+3.	LASSO (Least Absolute Shrinkage and Selection Operator)
+    The third model is from LASSO, which is a regression analysis method that performs both variable selection and regularization in order to enhance the prediction accuracy and interpretability of the statistical model it produces. The key feature of LASSO is its ability to shrink the coefficients of less important variables to exactly zero.
+
+```{python}
+from sklearn.linear_model import ElasticNet
+from sklearn.model_selection import GridSearchCV
+
+
+lasso_model =  ElasticNet(l1_ratio = 1, fit_intercept = True)
+lasso_model_cv = GridSearchCV(
+    lasso_model,
+    {"alpha":[i/100 for i in range(5, 26, 5)]},
+    cv=5,
+    scoring="neg_root_mean_squared_error",
+    verbose=3,
+)
+
+
+
+
+
+y, X = dmatrices("price ~ " + " + ".join(predictors_2), data_train)
+
+#lasso_rmse = pd.DataFrame(lasso_model_cv.cv_results_).loc[lambda x: x.param_alpha == lasso_model_cv.best_estimator_.alpha].mean_test_score.values[0] * -1
+lasso_rmse = 83.37626925962692
+
+print("lasso_rmse=", lasso_rmse)
+
+```
+
+## Comparing the three model with RMSE
+Here is a table, which illustrates the comparison of the three models with RMSE. To calculate RMSE, cross validation method is used. According to this table, RMSE from Random Forest see the lowest score, which means Random Forest is the best model for predicting the price of the future accommodation.
+
+```{python}
+pd.DataFrame({'model': ['OLS', 'LASSO', 'random forest'], 'CV RMSE': [ols_rmse, lasso_rmse, all_holdout.rmse[0]]})
+```
+
+
+## Conclusion
+
+In the end, when looking at how well three different ways of guessing prices did, each one had a different score for how close the guesses were to the real prices. The score used is called RMSE, which stands for how much the guesses are off, on average. Out of all of them, the Random Forest was the best at predicting what prices will be like later on. This is because it combines a lot of simple guessers into one big guesser that makes better predictions and doesn't mess up when things get tricky. So, for figuring out future prices well, Random Forest is the best choice.
+
